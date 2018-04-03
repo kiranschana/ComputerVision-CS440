@@ -1,12 +1,15 @@
 import cv2
 import numpy as np 
+from collections import deque
 
 ## FLAGS ##
 demo = True
 debug = True
 ## ##### ##
 
+# OpenCV Variables
 cap = cv2.VideoCapture(0)
+fgbg = cv2.createBackgroundSubtractorMOG2(detectShadows = False)
 
 # Game Variables
 states = ['idle', 'start', 'shoot', 'results']
@@ -18,6 +21,11 @@ p1Choice = "Rock"
 cpChoice = "Paper"
 pResult = "Lose"
 
+# Other Globals
+points = deque(maxlen=10) # contains recent positions of tracked objects
+dY = 0
+direction = '-'
+
 # Helper function for text
 def doubleText(frame, xy, text):
 	font = cv2.FONT_HERSHEY_SIMPLEX
@@ -28,7 +36,43 @@ def doubleText(frame, xy, text):
 # Loop on frames of video
 while True:
 	ret, frame = cap.read()
+	# frame is unmodified video
+	# frame2 is modified 
+
 	gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+	#median = cv2.medianBlur(gray, 25)
+	blur = cv2.GaussianBlur(gray, (15,15),0)
+	no_bg = fgbg.apply(blur)
+	#kernel = np.ones((10,10), np.float32)/100
+	#smoothed = cv2.filter2D(no_bg, -1, kernel)
+	#blur = cv2.GaussianBlur(no_bg, (21,21),0)
+	#median = cv2.medianBlur(no_bg, 11)
+	#eroded = cv2.erode(no_bg, kernel, iterations = 1)
+	#opened = cv2.morphologyEx(no_bg, cv2.MORPH_OPEN, kernel)
+	#closed = cv2.morphologyEx(no_bg, cv2.MORPH_CLOSE, kernel)
+	#median2 = cv2.medianBlur(opened, 15)
+	frame2 = no_bg
+
+	# movement tracking 
+	cont_list = cv2.findContours(no_bg.copy(), cv2.RETR_EXTERNAL,
+		cv2.CHAIN_APPROX_SIMPLE)[-2]
+	if len(cont_list) > 0:
+		c = max(cont_list, key=cv2.contourArea)
+		((x, y), radius) = cv2.minEnclosingCircle(c)
+		#cv2.circle(frame, (int(x), int(y)), int(radius), (0, 255, 255), 2)
+		cv2.circle(frame, (int(x),int(y)), 5, (0, 0, 255), -1)
+		points.appendleft((x,y))
+
+	if len(points) == 10:
+		if points[0] is not None and points[-1] is not None:
+			dY = points[0][1] - points[-1][1]
+			if np.abs(dY) > 75:
+				if np.sign(dY) == -1:
+					direction = "UP"
+				else:
+					direction = "DOWN"
+			else:
+				direction = "NONE"
 
 	# Game Logic
 	if currentState == 'idle':
@@ -50,6 +94,7 @@ while True:
 	# UI For Demo
 	if debug:
 		doubleText(frame, (30, 650), "Game state: " + currentState)
+		doubleText(frame, (30, 200), direction)
 
 	doubleText(frame, (30,30), "Play Rock Paper Scissors!")
 	doubleText(frame, (30,70), "Player Score: " + str(p1Score))
@@ -69,7 +114,7 @@ while True:
 	if demo:
 		cv2.imshow('frame', frame)
 	else:
-		cv2.imshow('gray', gray)
+		cv2.imshow('frame2', frame2)
 
 	# Close by pressing 'q'
 	if cv2.waitKey(1) & 0xFF == ord('q'):
